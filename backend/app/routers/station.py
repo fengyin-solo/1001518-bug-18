@@ -30,6 +30,28 @@ def list_entries(
     return PageResult(items=items, total=total, page=page, size=size)
 
 
+@router.get("/stats")
+def station_stats() -> dict[str, int]:
+    """列表统计卡：在网、降级、停用及待处理、异常量，口径与概览看板完全一致。"""
+    return service.stats()
+
+
+@router.get("/export")
+def export_entries() -> dict[str, Any]:
+    """导出观测站点清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(page=1, size=10000)
+    return {"module": "station", "total": total, "items": items}
+
+
+@router.get("/{entry_id}/history")
+def action_history(entry_id: int) -> dict[str, Any]:
+    """读取单个站点的操作记录，最近一次在最前；站点不存在时明确报错。"""
+    records = service.history(entry_id)
+    if records is None:
+        raise HTTPException(status_code=404, detail=f"观测站点 {entry_id} 不存在或已归档")
+    return {"entry_id": entry_id, "total": len(records), "items": records}
+
+
 @router.get("/{entry_id}", response_model=dict)
 def get_entry(entry_id: int) -> dict:
     """读取单条观测站点明细；不存在时给出可读的错误说明。"""
@@ -50,16 +72,13 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条观测站点执行办理入网、标记降级、停用站点；不允许的动作会被拦下并说明原因。"""
+    """对单条观测站点执行办理入网、标记降级、停用站点。
+
+    业务不允许的流转（如收尾态直接入网、重复点击同一动作）会被拦下并说明原因，
+    此时 ok=false 且状态不变，前端必须按 ok 判定而不是只看 HTTP 200。
+    """
     action = str(payload.values.get("action") or "").strip()
-    entry, message = service.run_action(entry_id, action)
+    entry, message = service.run_action(entry_id, action, operator=payload.remark)
     if entry is None:
         return ActionResult(ok=False, message=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出观测站点清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "station", "total": total, "items": items}
