@@ -16,6 +16,12 @@ LIST_FIELDS = ["站点编码", "站点名称", "站点类别", "经纬度坐标"
 STATUSES = ["待入网", "正常运行", "降级运行", "已停用"]
 
 
+@router.get("/summary")
+def summary() -> dict[str, Any]:
+    """观测站点状态汇总：给列表页统计卡用，与概览看板保持同一套口径。"""
+    return service.summary()
+
+
 @router.get("", response_model=PageResult[dict])
 def list_entries(
     keyword: str | None = Query(default=None, description="按站点编码检索"),
